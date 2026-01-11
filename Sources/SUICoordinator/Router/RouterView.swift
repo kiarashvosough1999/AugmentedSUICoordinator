@@ -25,22 +25,21 @@
 import SwiftUI
 import Combine
 
-struct RouterView<C: CoordinatorType>: View {
+struct RouterView<Router: RouterType>: View {
     
     // --------------------------------------------------------------------
     // MARK: Properties
     // --------------------------------------------------------------------
     
-    @StateObject private var viewModel: Router<C.Route>
-    private  let coordinator: C
+    @ObservedObject var viewModel: Router
+    @State private var mainView: Router.Route?
     
     // --------------------------------------------------------------------
     // MARK: Constructor
     // --------------------------------------------------------------------
     
-    public init(coordinator: C) {
-        self._viewModel = .init(wrappedValue: coordinator.router)
-        self.coordinator = coordinator
+    public init(viewModel: Router) {
+        self._viewModel = .init(wrappedValue: viewModel)
     }
     
     // --------------------------------------------------------------------
@@ -49,7 +48,8 @@ struct RouterView<C: CoordinatorType>: View {
     
     var body: some View {
         ZStack { buildBody() }
-            .clearModalBackground(coordinator.isTabCoordinable)
+            .clearModalBackground(viewModel.isTabCoordinable)
+            .onViewDidLoad { onChangeFirstView(viewModel.mainView) }
     }
     
     // --------------------------------------------------------------------
@@ -60,12 +60,12 @@ struct RouterView<C: CoordinatorType>: View {
     @ViewBuilder
     private func buildBody() -> some View {
         Group {
-            if coordinator.isTabCoordinable {
-                viewModel.mainView
-            } else if let mainView = viewModel.mainView  {
+            if viewModel.isTabCoordinable {
+                addSheetTo(view: mainView)
+            } else {
                 let view = NavigationStack(
                     path: $viewModel.items,
-                    root: { mainView.navigationDestination(for: C.Route.self) { $0 } }
+                    root: { mainView.navigationDestination(for: Router.Route.self) { $0 } }
                 )
                 .transaction { $0.disablesAnimations = !viewModel.animated }
                 .onChange(of: viewModel.items, perform: onChangeItems)
@@ -77,21 +77,28 @@ struct RouterView<C: CoordinatorType>: View {
     
     @ViewBuilder
     private func addSheetTo(view: (some View)?) -> some View {
-        view.environmentObject(coordinator)
+        view
+            .onChange(of: viewModel.mainView, perform: onChangeFirstView)
             .sheetCoordinator(
-            coordinator: viewModel.sheetCoordinator,
-            onDissmis: { index in Task(priority: .high) { @MainActor [weak viewModel] in
-                await viewModel?.removeItemFromSheetCoordinator(at: index)
-            }},
-            onDidLoad: nil
-        )
+                coordinator: viewModel.sheetCoordinator,
+                onDissmis: { index in Task(priority: .high) { @MainActor [weak viewModel] in
+                    await viewModel?.removeItemFromSheetCoordinator(at: index)
+                }},
+                onDidLoad: { _ in }
+            )
     }
     
     // --------------------------------------------------------------------
     // MARK: Helper functions
     // --------------------------------------------------------------------
     
-    private func onChangeItems(_ value: [C.Route]) {
+    private func onChangeFirstView(_ value: Router.Route?) {
+        guard let value else { return (mainView = nil) }
+        
+        mainView = value
+    }
+    
+    private func onChangeItems(_ value: [Router.Route]) {
         Task { await viewModel.syncItems() }
     }
 }

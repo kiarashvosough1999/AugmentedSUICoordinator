@@ -39,10 +39,6 @@ public struct CoordinatorView<DataSource: CoordinatorType>: View {
     
     init(dataSource: DataSource) {
         self._dataSource = .init(wrappedValue: dataSource)
-        
-        if !dataSource.isRunning && !dataSource.isTabCoordinable {
-            Task { @MainActor in await dataSource.start() }
-        }
     }
     
     // --------------------------------------------------------------------
@@ -50,6 +46,9 @@ public struct CoordinatorView<DataSource: CoordinatorType>: View {
     // --------------------------------------------------------------------
     
     public var body: some View {
-        RouterView(coordinator: dataSource)
+        RouterView(viewModel: dataSource.router)
+            .onViewDidLoad {
+                Task(priority: .high) { await dataSource.start() }
+            }
     }
 }

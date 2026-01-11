@@ -31,7 +31,7 @@ enum HomeRoute: RouteType {
     case sheet(coordinator: HomeCoordinator, title: String)
     case fullscreen(coordinator: HomeCoordinator, title: String)
     case detents(coordinator: HomeCoordinator, title: String)
-    case actionListView
+    case actionListView(coordinator: HomeCoordinator)
     case viewCustomTransition(coordinator: HomeCoordinator, title: String)
     
     // ---------------------------------------------------------------------
@@ -53,7 +53,7 @@ enum HomeRoute: RouteType {
         case .viewCustomTransition:
             return .custom(
                 transition: .move(edge: .leading),
-                animation: .bouncy,
+                animation: .bouncy
             )
         }
     }
@@ -67,8 +67,8 @@ enum HomeRoute: RouteType {
             let .fullscreen(coordinator, title),
             let .detents(coordinator, title):
             NavigationActionListDetailView(coordinator: coordinator, title: title)
-        case .actionListView:
-            NavigationActionListView()
+        case .actionListView(let coordinator):
+            NavigationActionListView(viewModel: .init(coordinator: coordinator))
         }
     }
 }

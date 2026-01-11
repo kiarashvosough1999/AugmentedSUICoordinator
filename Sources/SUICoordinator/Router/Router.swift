@@ -24,6 +24,7 @@
 
 import Combine
 import Foundation
+import SwiftUI
 
 /// A class representing a router in the coordinator pattern.
 ///
@@ -85,13 +86,32 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
     ///
     /// This property affects all navigation operations performed by the router.
     /// When `true`, transitions are animated; when `false`, they occur immediately.
-    public var animated: Bool = true
+    @Published public var animated: Bool = true
     
     /// Thread-safe item manager for navigation stack operations.
     ///
     /// This actor-based manager ensures safe concurrent access to the navigation items,
     /// preventing race conditions during navigation operations.
     private let itemManager = ItemManager<Route>()
+    
+    /// Presentation queue to handle concurrent presentation requests safely
+    private let presentationQueue = DispatchQueue(label: "com.suicoordinator.presentation", qos: .userInitiated)
+    
+    /// Flag to track if a presentation is currently in progress
+    private var isPresenting = false
+    
+    /// Presentation lock for thread safety
+    private let presentationLock = NSLock()
+    
+    // --------------------------------------------------------------------
+    // MARK: Properties
+    // --------------------------------------------------------------------
+    
+    /// Indicates whether this router is associated with an tab-coordinable coordinator.
+    ///
+    /// This flag affects how the router handles navigation operations, particularly
+    /// for coordinators that manage tab-based interfaces.
+    public var isTabCoordinable: Bool = false
     
     // --------------------------------------------------------------------
     // MARK: Constructor
@@ -126,10 +146,15 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
         animated: Bool = true
     ) async -> Void {
         self.animated = animated
-        if (presentationStyle ?? route.presentationStyle) == .push {
+        let style = presentationStyle ?? route.presentationStyle
+        
+        // Only push to navigation stack if it's explicitly a push style
+        if style == .push {
             await itemManager.addItem(route)
             return await updateItems()
         }
+        
+        // All other styles (including NavigationStack styles) should be presented modally
         await present(
             route,
             presentationStyle: presentationStyle,
@@ -148,10 +173,11 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
     ///   - animated: A boolean value indicating whether to animate the presentation.
     ///
     /// - Note: If the presentation style is `.push`, this method delegates to `navigate(toRoute:)`.
-    @MainActor public func present(_ view: Route, presentationStyle: TransitionPresentationStyle? = nil, animated: Bool = true) async -> Void {
+    @MainActor public func present(_ view: Route, presentationStyle: TransitionPresentationStyle? = .sheet, animated: Bool = true) async -> Void {
         self.animated = animated
         
-        if (presentationStyle ?? view.presentationStyle) == .push {
+        let style = presentationStyle ?? view.presentationStyle
+        if style == .push {
             return await navigate(
                 toRoute: view,
                 presentationStyle: presentationStyle,
@@ -161,11 +187,66 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
         let item = SheetItem(
             id: "\(view.id) - \(UUID())",
             animated: animated,
-            presentationStyle: presentationStyle ?? view.presentationStyle,
+            presentationStyle: style,
             view: { view as AnyViewAlias }
         )
         
         await presentSheet(item: item)
+    }
+    
+    /// Safely presents a view or coordinator with presentation queuing to prevent race conditions.
+    ///
+    /// This method ensures that presentations are queued and processed one at a time,
+    /// preventing the "presentation in progress" error and array index crashes.
+    ///
+    /// - Parameters:
+    ///   - view: The view or coordinator to present.
+    ///   - presentationStyle: The transition presentation style for the presentation.
+    ///                        Defaults to `.sheet` if not specified.
+    ///   - animated: A boolean value indicating whether to animate the presentation.
+    @MainActor public func safePresent(_ view: Route, presentationStyle: TransitionPresentationStyle? = .sheet, animated: Bool = true) async -> Void {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            presentationQueue.async {
+                Task { @MainActor in
+                    let style = presentationStyle ?? view.presentationStyle
+                    if style == .push {
+                        await self.navigate(toRoute: view, presentationStyle: presentationStyle, animated: animated)
+                        continuation.resume()
+                        return
+                    }
+
+                    let id = "\(view.id) - \(UUID())"
+                    let item = SheetItem(
+                        id: id,
+                        animated: animated,
+                        presentationStyle: style,
+                        view: { view as AnyViewAlias }
+                    )
+
+                    // Present and then wait until the view layer reports didLoad for this index
+                    await self.sheetCoordinator.presentSheet(item)
+
+                    // Wait loop: poll until any displayed index maps to our id
+                    // This avoids racing multiple sheet attachments in SwiftUI.
+                    for _ in 0..<40 { // ~2s max
+                        try? await Task.sleep(for: .milliseconds(50))
+                        var found = false
+                        let count = self.sheetCoordinator.items.count
+                        var i = 0
+                        while i < count {
+                            if let sid = self.sheetCoordinator.getId(for: i), sid == id {
+                                found = true
+                                break
+                            }
+                            i += 1
+                        }
+                        if found { break }
+                    }
+
+                    continuation.resume()
+                }
+            }
+        }
     }
     
     /// Pops the top view or coordinator from the navigation stack.
@@ -270,6 +351,72 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
         await sheetCoordinator.presentSheet(item)
     }
     
+    /// Safely presents a sheet with a specified item using presentation queuing.
+    ///
+    /// This internal method handles the actual presentation of sheet items
+    /// through the sheet coordinator with race condition protection.
+    ///
+    /// - Parameters:
+    ///   - item: The sheet item containing the view to present.
+    @MainActor func safePresentSheet(item: SheetItem<AnyViewAlias>) async -> Void {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            presentationQueue.async {
+                Task { @MainActor in
+                    let id = item.id
+                    await self.sheetCoordinator.presentSheet(item)
+
+                    for _ in 0..<40 { // ~2s max
+                        try? await Task.sleep(for: .milliseconds(50))
+                        var found = false
+                        let count = self.sheetCoordinator.items.count
+                        var i = 0
+                        while i < count {
+                            if let sid = self.sheetCoordinator.getId(for: i), sid == id {
+                                found = true
+                                break
+                            }
+                            i += 1
+                        }
+                        if found { break }
+                    }
+
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    /// Presents a NavigationStack-enabled sheet or fullScreenCover.
+    ///
+    /// This method creates a sheet presentation with NavigationStack support,
+    /// allowing for push navigation within the modal presentation.
+    ///
+    /// - Parameters:
+    ///   - view: The view or coordinator to present.
+    ///   - presentationStyle: The transition presentation style (.navigationSheet or .navigationFullScreenCover).
+    ///   - animated: A boolean value indicating whether to animate the presentation.
+    @MainActor public func presentWithNavigationStack(
+        _ view: Route,
+        presentationStyle: TransitionPresentationStyle,
+        animated: Bool = true
+    ) async -> Void {
+        self.animated = animated
+        
+        guard presentationStyle.isNavigationSheet || presentationStyle == .navigationFullScreenCover else {
+            // Fallback to regular presentation if not a NavigationStack style
+            return await present(view, presentationStyle: presentationStyle, animated: animated)
+        }
+        
+        let item = SheetItem(
+            id: "\(view.id) - \(UUID())",
+            animated: animated,
+            presentationStyle: presentationStyle,
+            view: { view as AnyViewAlias }
+        )
+        
+        await presentSheet(item: item)
+    }
+    
     /// Handles the pop action by updating the navigation stack.
     ///
     /// This private method performs the actual removal of the last item
@@ -286,11 +433,9 @@ public class Router<Route: RouteType>: ObservableObject, RouterType {
     /// item manager state, triggering UI updates when the navigation stack changes.
     @MainActor
     func updateItems() async {
-        let itemsManager = await itemManager.getAllItems()
+        try? await Task.sleep(for: .milliseconds(20))
         
-        guard items != itemsManager else { return }
-        
-        items = itemsManager
+        self.items = await self.itemManager.getAllItems()
     }
     
     /// Synchronizes the router's items array with the internal item manager state.

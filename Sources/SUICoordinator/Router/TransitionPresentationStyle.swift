@@ -39,8 +39,18 @@ public enum TransitionPresentationStyle: @unchecked Sendable, SCEquatable {
     case fullScreenCover
     /// A style allowing for presenting views with specific detents.
     case detents(Set<PresentationDetent>)
+    /// A sheet presentation style with NavigationStack support for push navigation.
+    case navigationSheet(Set<PresentationDetent> = [])
+    /// A full-screen cover presentation style with NavigationStack support for push navigation.
+    case navigationFullScreenCover
     /// A custom presentation style.
     case custom(transition: AnyTransition, animation: Animation?, fullScreen: Bool = false)
+    
+    internal var isNavigationSheet: Bool {
+        guard case .navigationSheet = self else { return false }
+        
+        return true
+    }
     
     internal var isCustom: Bool {
         guard case .custom = self else { return false }

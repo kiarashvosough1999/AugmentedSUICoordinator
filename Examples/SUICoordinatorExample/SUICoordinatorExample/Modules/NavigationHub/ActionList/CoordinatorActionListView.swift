@@ -28,28 +28,23 @@ struct CoordinatorActionListView: View {
     
     @Environment(\.isPresented) private var isPresented
     @StateObject var viewModel: CoordinatorActionListViewModel
-    @EnvironmentObject var coordinator: NavigationHubCoordinator
     
     var body: some View {
         ZStack {
             
-            Color.gray.ignoresSafeArea()
+            Color.black.opacity(0.7).ignoresSafeArea()
             
             List {
                 actionRowButton(title: "Presents Default Tab Coordinator", systemImage: "rectangle.fill.on.rectangle.fill") {
-                    await coordinator.presentDefaultTabCoordinator()
+                    await viewModel.presentDefaultTabCoordinator()
                 }
                 
                 actionRowButton(title: "Presents Custom Tab Coordinator", systemImage: "square.grid.2x2.fill") {
-                    await coordinator.presentCustomTabCoordinator()
+                    await viewModel.presentCustomTabCoordinator()
                 }
                 
                 actionRowButton(title: "Presents Home Coordinator", systemImage: "rectangle.bottomthird.inset.fill") {
-                    await coordinator.presentHomeCoordinator()
-                }
-                
-                actionRowButton(title: "Presents Coordinator with push navigation", systemImage: "rectangle.bottomthird.inset.fill") {
-                    await coordinator.presentHomeCoordinatorWithCustomNavigation()
+                    await viewModel.presentHomeCoordinator()
                 }
             }
             .toolbar {
@@ -59,7 +54,7 @@ struct CoordinatorActionListView: View {
                     Text("Finish flow")
                 }
             }
-            .navigationTitle("Coordinators List")
+            .navigationTitle("Coordinator Action List")
             .listStyle(.plain)
             .navigationBarTitleDisplayMode(.large)
         }
@@ -71,27 +66,24 @@ struct CoordinatorActionListView: View {
         systemImage: String,
         action: @escaping () async -> Void
     ) -> some View {
-        Button {
-            Task { await action() }
-        } label: {
-            HStack(spacing: 16) {
-                Image(systemName: systemImage)
-                    .font(.title2.weight(.medium))
-                    .foregroundColor(.blue)
-                    .frame(width: 30)
-                
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.body.weight(.semibold))
-                    .foregroundColor(Color(white: 0.7))
-            }
+        HStack(spacing: 16) {
+            Image(systemName: systemImage)
+                .font(.title2.weight(.medium))
+                .foregroundColor(.blue)
+                .frame(width: 30)
+            
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.white)
+            
+            Spacer()
+            
+            Image(systemName: "chevron.right")
+                .font(.body.weight(.semibold))
+                .foregroundColor(Color(white: 0.7))
         }
         .contentShape(Rectangle())
+        .onTapGesture { Task { await action() } }
         .padding(.all, 8)
         .listRowBackground(
             RoundedRectangle(cornerRadius: 12)
