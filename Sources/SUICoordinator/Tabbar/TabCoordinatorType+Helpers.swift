@@ -53,6 +53,13 @@ extension TabCoordinatorType {
         else { return  }
         
         currentPage = item
+        
+        // Start the coordinator for the selected tab if it hasn't been started yet
+        if let coordinator = getCoordinator(with: value.position) {
+            Task {
+                await coordinator.start()
+            }
+        }
     }
     
     /// Pops all view controllers to the root of the currently selected tab's navigation stack.

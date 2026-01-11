@@ -29,6 +29,7 @@ import Foundation
 actor ItemManager<T> {
     
     private var items: [T] = []
+    private var isProcessing = false
     
     // ---------------------------------------------------------
     // MARK: Create
@@ -50,6 +51,21 @@ actor ItemManager<T> {
             return 0
         }
         return items.count - 1
+    }
+    
+    /// Safely gets the total items count with bounds checking
+    var safeTotalItems: Int {
+        return max(0, items.count - 1)
+    }
+    
+    /// Checks if the manager is currently processing operations
+    var isCurrentlyProcessing: Bool {
+        return isProcessing
+    }
+    
+    /// Sets the processing state
+    func setProcessing(_ processing: Bool) {
+        isProcessing = processing
     }
     
     // ---------------------------------------------------------
@@ -99,6 +115,32 @@ actor ItemManager<T> {
         guard !areItemsEmpty() else { return }
         return items.removeAll()
     }
+    
+    /// Safely gets an item at a specific index with bounds checking
+    /// - Parameter index: The index of the item to retrieve
+    /// - Returns: The item at the index, or `nil` if the index is out of bounds
+    func safeGetItem(at index: Int) -> T? {
+        guard index >= 0 && index < items.count else { return nil }
+        return items[index]
+    }
+    
+    /// Safely removes an item at a specific index with bounds checking
+    /// - Parameter index: The index of the item to remove
+    /// - Returns: The removed item, or `nil` if the index was out of bounds
+    @discardableResult
+    func safeRemoveItem(at index: Int) -> T? {
+        guard index >= 0 && index < items.count else { return nil }
+        return items.remove(at: index)
+    }
+    
+    /// Sets an item at a specific index, replacing any existing item at that position.
+    /// - Parameters:
+    ///   - index: The index where to set the item.
+    ///   - item: The item to set at the specified index.
+    func setItem(at index: Int, _ item: T) {
+        guard index >= 0 && index < items.count else { return }
+        items[index] = item
+    }
 }
 
 /// Protocol to identify types that are inherently optional.
@@ -132,12 +174,29 @@ extension ItemManager where T: OptionalType {
         guard items.indices.contains(index) else { return nil }
         return items[index].unwrap()
     }
+    
+    /// Safely retrieves an item at a specific index and attempts to unwrap it with bounds checking.
+    /// - Parameter index: The index of the item to retrieve and unwrap.
+    /// - Returns: The unwrapped value if the item at the index is non-nil and contains a value, otherwise `nil`.
+    func safeGetItem(at index: Int) -> T.Wrapped? {
+        guard index >= 0 && index < items.count else { return nil }
+        return items[index].unwrap()
+    }
 
     /// Sets the items at the specified indices to their `nil` representation.
     /// - Parameter indexes: An array of indices for items to be set to `nil`.
     func makeItemsNil(at indexes: [Int]) {
         for index in indexes {
             guard isValid(index: index) else { continue }
+            items[index] = T.from(nilLiteral: ())
+        }
+    }
+    
+    /// Safely sets the items at the specified indices to their `nil` representation with bounds checking.
+    /// - Parameter indexes: An array of indices for items to be set to `nil`.
+    func safeMakeItemsNil(at indexes: [Int]) {
+        for index in indexes {
+            guard index >= 0 && index < items.count else { continue }
             items[index] = T.from(nilLiteral: ())
         }
     }

@@ -43,6 +43,9 @@ public protocol RouterType: ObservableObject {
     // MARK: Properties
     // --------------------------------------------------------------------
     
+    /// The coordinator associated with the router.
+    var isTabCoordinable: Bool { get }
+    
     /// An array of route items associated with the router.
     var items: [Route] { get set }
     

@@ -96,7 +96,7 @@ public protocol TabCoordinatorType: ObservableObject {
     /// setBadge.send(("5", myPage)) // Set badge to "5"
     /// setBadge.send((nil, myPage)) // Remove badge
     /// ```
-    var badge: PassthroughSubject<(String?, Page), Never> { get }
+    var setBadge: PassthroughSubject<(String?, Page), Never> { get set }
     
     /// An array containing all pages managed by the tab coordinator.
     ///
@@ -138,7 +138,7 @@ public protocol TabCoordinatorType: ObservableObject {
     ///     // Interact with the first tab's coordinator
     /// }
     /// ```
-    func getCoordinator(with page: Page) -> AnyCoordinatorType?
+    func getCoordinator(with position: Int) -> AnyCoordinatorType?
     
     /// Retrieves the currently selected coordinator within the tab coordinator.
     ///
@@ -177,7 +177,45 @@ public protocol TabCoordinatorType: ObservableObject {
     /// ```
     @MainActor func clean() async
     
-    func setBadge(for page: Page, with value: String?)
+    /// Presents a route through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to present views through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - route: The route to present
+    ///   - presentationStyle: The presentation style for the route
+    ///   - animated: Whether to animate the presentation
+    @MainActor func presentFromChild<Route: RouteType>(_ route: Route, presentationStyle: TransitionPresentationStyle?, animated: Bool) async
+    
+    /// Presents a sheet through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to present sheets through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - item: The sheet item to present
+    @MainActor func presentSheetFromChild(_ item: SheetItem<AnyViewAlias>) async
+    
+    /// Dismisses the current presentation through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to dismiss presentations through the tab coordinator's
+    /// router instead of their own, ensuring proper dismissal of parent-presented content.
+    ///
+    /// - Parameters:
+    ///   - animated: Whether to animate the dismissal
+    @MainActor func dismissFromChild(animated: Bool) async
+    
+    /// Navigates to a coordinator through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to navigate to other coordinators through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - coordinator: The coordinator to navigate to
+    ///   - presentationStyle: The presentation style for the navigation
+    ///   - animated: Whether to animate the navigation
+    @MainActor func navigateFromChild(to coordinator: AnyCoordinatorType, presentationStyle: TransitionPresentationStyle, animated: Bool) async
 }
 
 /// A type alias representing a coordinator that conforms to both `CoordinatorType` and `TabCoordinatorType`.

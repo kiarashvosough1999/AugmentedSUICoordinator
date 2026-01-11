@@ -23,7 +23,11 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
+#if canImport(UIKit)
 struct ClearBackgroundView: UIViewRepresentable {
     func makeUIView(context: Context) -> some UIView {
         let view = UIView()
@@ -34,6 +38,13 @@ struct ClearBackgroundView: UIViewRepresentable {
     }
     func updateUIView(_ uiView: UIViewType, context: Context) { }
 }
+#else
+struct ClearBackgroundView: View {
+    var body: some View {
+        Color.clear
+    }
+}
+#endif
 
 struct ClearBackgroundViewModifier: ViewModifier {
     
@@ -41,7 +52,7 @@ struct ClearBackgroundViewModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         if condition {
-            if #available(iOS 16.4, *) {
+            if #available(iOS 16.4, macOS 13.3, *) {
                 content
                     .presentationBackground(.clear)
             } else {

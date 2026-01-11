@@ -129,6 +129,7 @@ final public class SheetCoordinator<T>: ObservableObject {
         self.onRemoveItem = onRemoveItem
     }
     
+    
     // ---------------------------------------------------------
     // MARK: Computed vars
     // ---------------------------------------------------------
@@ -169,7 +170,8 @@ final public class SheetCoordinator<T>: ObservableObject {
         lastPresentationStyle = sheet.presentationStyle
         
         await itemManager.addItem(sheet)
-        await backUpItems[totalItems] = sheet.id
+        let safeTotalItems = await itemManager.safeTotalItems
+        await backUpItems[safeTotalItems] = sheet.id
         await updateItems()
     }
     
@@ -185,14 +187,14 @@ final public class SheetCoordinator<T>: ObservableObject {
         guard !(await areEmptyItems) else { return await updateItems() }
         
         self.animated = animated
-        let totalItems = await totalItems
+        let safeTotalItems = await itemManager.safeTotalItems
         
         await updateLastPresentationStyle()
         
         if lastPresentationStyle?.isCustom == true {
-            await itemManager.getItem(at: totalItems)?.willDismiss.send()
+            await itemManager.safeGetItem(at: safeTotalItems)?.willDismiss.send()
         } else {
-            await itemManager.makeItemsNil(at: totalItems)
+            await itemManager.safeMakeItemsNil(at: [safeTotalItems])
         }
         
         await updateItems()
@@ -210,7 +212,7 @@ final public class SheetCoordinator<T>: ObservableObject {
         self.animated = animated
         
         await updateLastPresentationStyle()
-        await itemManager.makeItemsNil(at: index)
+        await itemManager.safeMakeItemsNil(at: index)
         await updateItems()
     }
     
@@ -359,5 +361,39 @@ final public class SheetCoordinator<T>: ObservableObject {
     /// - Returns: The dictionary element (key-value pair) if found, or `nil` if not found.
     private func getBackupItemIndex(by value: String) -> Dictionary<Int, String>.Element? {
         backUpItems.first(where: { $0.value == value})
+    }
+
+    /// Returns the sheet item's identifier for a given index, if available.
+    ///
+    /// - Parameter index: The sheet stack index reported by the view layer.
+    /// - Returns: The stable `id` string that was assigned to the `SheetItem` when presented.
+    @MainActor
+    func getId(for index: Int) -> String? {
+        backUpItems[index]
+    }
+    
+    /// Replaces a sheet item at the specified index with a new item.
+    ///
+    /// This method allows for updating an existing sheet item with new content and presentation style
+    /// without dismissing and re-presenting the sheet, providing a smoother user experience.
+    ///
+    /// - Parameters:
+    ///   - index: The index of the sheet item to replace.
+    ///   - newItem: The new sheet item to replace the existing one.
+    ///   - animated: Whether to animate the replacement.
+    @MainActor func replaceSheetItem(at index: Int, with newItem: Item, animated: Bool) async -> Void {
+        guard await itemManager.isValid(index: index) else { return }
+        
+        self.animated = animated
+        lastPresentationStyle = newItem.presentationStyle
+        
+        // Update the backup items with the new item ID
+        backUpItems[index] = newItem.id
+        
+        // Replace the item in the item manager
+        await itemManager.setItem(at: index, newItem)
+        
+        // Update the published items
+        await updateItems()
     }
 }

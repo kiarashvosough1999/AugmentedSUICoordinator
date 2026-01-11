@@ -56,6 +56,18 @@ class ActionListViewModel: ObservableObject {
         await coordinator.presentCustomTabCoordinator()
     }
     
+    @MainActor func presentNavigationSheet() async {
+        await coordinator.presentNavigationSheet()
+    }
+    
+    @MainActor func presentNavigationFullScreen() async {
+        await coordinator.presentNavigationFullScreen()
+    }
+    
+    @MainActor func pushTabBar() async {
+        await coordinator.pushTabBar()
+    }
+    
     @MainActor func finish() async {
         await coordinator.finish()
     }

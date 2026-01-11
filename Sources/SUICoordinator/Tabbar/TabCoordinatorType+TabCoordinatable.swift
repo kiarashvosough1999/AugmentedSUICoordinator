@@ -22,6 +22,8 @@
 //  THE SOFTWARE.
 //
 
+import Foundation
+
 /// An extension providing default implementations for tab coordinator management.
 ///
 /// This extension adds convenience methods to types that conform to both `TabCoordinatorType`
@@ -67,12 +69,21 @@ extension TabCoordinatorType where Self : TabCoordinatable {
             
             if children.contains(where: { $0.uuid == item.uuid }) { break }
             
-            await item.start()
+            // Set up parent-child relationship for presentation routing
+            if var presentable = item as? TabChildPresentable {
+                presentable.parentTabCoordinator = self as? (any TabCoordinatable)
+            }
+            
+            // Don't start child coordinators immediately to prevent race conditions
+            // They will be started when the tab is actually selected
             startChildCoordinator(item)
-            item.tagId = "\(page.id)"
+            item.tagId = "\(page.position)"
         }
         
         pages = value
         setCurrentPage(currentPage)
+        
+        // Child coordinators will be started by the TabCoordinator's start() method
+        // after the tab view is fully presented
     }
 }

@@ -37,10 +37,3 @@ class OtherCoordinator: Coordinator<DefaultRoute> {
         await startFlow(route: .init(presentationStyle: page.presentationStyle, content: { page }))
     }
 }
-
-class ThirdCoordinator: Coordinator<DefaultRoute> {
-    override func start() async {
-        let page = AnyEnumRoute.pushStep(1)
-        await startFlow(route: .init(presentationStyle: page.presentationStyle, content: { page }))
-    }
-}

@@ -83,11 +83,24 @@ struct SheetView<Content: View, T: SheetItemType>: View {
                         index: index,
                         onDismiss: onDismiss
                     )
+                case .navigationFullScreenCover:
+                    navigationFullScreenView(
+                        item: item,
+                        index: index,
+                        onDismiss: onDismiss
+                    )
                 case .sheet, .detents:
                     sheetView(
                         item: item,
                         index: index,
                         onDismiss: onDismiss
+                    )
+                case .navigationSheet(let detents):
+                    navigationSheetView(
+                        item: item,
+                        index: index,
+                        onDismiss: onDismiss,
+                        detents: detents
                     )
                 case .custom(let transition, let animation, let fullScreen):
                     customTransitionView(
@@ -175,6 +188,40 @@ struct SheetView<Content: View, T: SheetItemType>: View {
         )
     }
     
+    @ViewBuilder
+    private func navigationFullScreenView(
+        item: Binding<Item?>,
+        index: Int,
+        onDismiss: ActionClosure?
+    ) -> some View {
+        navigationFullScreenContainer(
+            item: item,
+            animated: animated,
+            index: index,
+            onDismiss: onDismiss,
+            content: { content(index, $0) }
+        )
+    }
+    
+    @ViewBuilder
+    private func navigationSheetView(
+        item: Binding<Item?>,
+        index: Int,
+        onDismiss: ActionClosure?,
+        detents: Set<PresentationDetent>
+    ) -> some View {
+        navigationSheetContainer(
+            item: item,
+            animated: animated,
+            index: index,
+            onDismiss: onDismiss,
+            detents: detents,
+            content: {
+                content(index, $0)
+            }
+        )
+    }
+    
     // ---------------------------------------------------------
     // MARK: View containers
     // ---------------------------------------------------------
@@ -187,13 +234,25 @@ struct SheetView<Content: View, T: SheetItemType>: View {
         onDismiss: ActionClosure? = nil,
         @ViewBuilder content: @escaping (Item) -> some View
     ) -> some View {
+        #if os(iOS)
         defaultView
             .fullScreenCover(
                 item: item,
                 onDismiss: {onDismiss?(String(index))},
-                content: { content($0).onViewDidLoad { onDidLoad?(String(index)) } }
+                content: { content($0) }
             )
+            .onAppear(perform: { onDidLoad?(String(index)) })
             .transaction { $0.disablesAnimations = !(animated) }
+        #else
+        // On macOS, fallback to sheet presentation
+        sheetContainer(
+            item: item,
+            animated: animated,
+            index: index,
+            onDismiss: onDismiss,
+            content: content
+        )
+        #endif
     }
     
     @ViewBuilder
@@ -208,9 +267,67 @@ struct SheetView<Content: View, T: SheetItemType>: View {
             .sheet(
                 item: item,
                 onDismiss: { onDismiss?(String(index)) },
-                content: { content($0).onViewDidLoad { onDidLoad?(String(index)) } }
+                content: { content($0) }
             )
+            .onAppear(perform: { onDidLoad?(String(index)) })
             .transaction { $0.disablesAnimations = !(animated) }
+    }
+    
+    @ViewBuilder
+    private func navigationSheetContainer(
+        item: Binding<Item?>,
+        animated: Bool,
+        index: Int,
+        onDismiss: ActionClosure? = nil,
+        detents: Set<PresentationDetent>,
+        @ViewBuilder content: @escaping (Item) -> some View
+    ) -> some View {
+        defaultView
+            .sheet(
+                item: item,
+                onDismiss: { onDismiss?(String(index)) },
+                content: { item in
+                    NavigationStack {
+                        content(item)
+                    }
+                    .presentationDetents(detents)
+                }
+            )
+            .onAppear(perform: { onDidLoad?(String(index)) })
+            .transaction { $0.disablesAnimations = !(animated) }
+    }
+    
+    @ViewBuilder
+    private func navigationFullScreenContainer(
+        item: Binding<Item?>,
+        animated: Bool,
+        index: Int,
+        onDismiss: ActionClosure? = nil,
+        @ViewBuilder content: @escaping (Item) -> some View
+    ) -> some View {
+        #if os(iOS)
+        defaultView
+            .fullScreenCover(
+                item: item,
+                onDismiss: { onDismiss?(String(index)) },
+                content: { item in
+                    NavigationStack {
+                        content(item)
+                    }
+                }
+            )
+            .onAppear(perform: { onDidLoad?(String(index)) })
+            .transaction { $0.disablesAnimations = !(animated) }
+        #else
+        // On macOS, fallback to sheet presentation
+        navigationSheetContainer(
+            item: item,
+            animated: animated,
+            index: index,
+            onDismiss: onDismiss,
+            content: content
+        )
+        #endif
     }
     
     private var defaultView: some View {

@@ -58,10 +58,6 @@ class NavigationActionListDetailViewModel: ObservableObject {
         await coordinator.close()
     }
     
-    @MainActor func finish() async {
-        await coordinator.finish()
-    }
-    
     @MainActor func restartCoordinator() async {
         await coordinator.restart()
     }

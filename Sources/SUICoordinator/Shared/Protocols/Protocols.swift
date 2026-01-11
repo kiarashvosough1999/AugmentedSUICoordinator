@@ -24,6 +24,55 @@
 
 import Foundation
 
+/// Protocol for coordinators that can present views through a parent TabCoordinator
+public protocol TabChildPresentable: AnyObject {
+    /// The parent TabCoordinator that handles presentations
+    @MainActor var parentTabCoordinator: (any TabCoordinatable)? { get set }
+    
+    /// Presents a route through the parent TabCoordinator's router
+    func presentThroughParent<Route: RouteType>(_ route: Route, presentationStyle: TransitionPresentationStyle?, animated: Bool) async
+    
+    /// Presents a sheet through the parent TabCoordinator's router
+    func presentSheetThroughParent(_ item: SheetItem<AnyViewAlias>) async
+    
+    /// Dismisses the current presentation through the parent TabCoordinator's router
+    func dismissThroughParent(animated: Bool) async
+    
+    /// Navigates to a coordinator through the parent TabCoordinator's router
+    func navigateThroughParent(to coordinator: AnyCoordinatorType, presentationStyle: TransitionPresentationStyle, animated: Bool) async
+}
+
+/// Default implementation for TabChildPresentable
+public extension TabChildPresentable {
+    func presentThroughParent<Route: RouteType>(_ route: Route, presentationStyle: TransitionPresentationStyle? = .sheet, animated: Bool = true) async {
+        if let tabCoordinator = await parentTabCoordinator as? (any TabCoordinatable) {
+            await tabCoordinator.presentFromChild(route, presentationStyle: presentationStyle, animated: animated)
+        }
+    }
+    
+    func presentSheetThroughParent(_ item: SheetItem<AnyViewAlias>) async {
+        if let tabCoordinator = await parentTabCoordinator as? (any TabCoordinatable) {
+            await tabCoordinator.presentSheetFromChild(item)
+        }
+    }
+    
+    func dismissThroughParent(animated: Bool = true) async {
+        if let tabCoordinator = await parentTabCoordinator as? (any TabCoordinatable) {
+            await tabCoordinator.dismissFromChild(animated: animated)
+        }
+    }
+    
+    func navigateThroughParent(
+        to coordinator: AnyCoordinatorType,
+        presentationStyle: TransitionPresentationStyle,
+        animated: Bool = true
+    ) async {
+        if let tabCoordinator = await parentTabCoordinator as? (any TabCoordinatable) {
+            await tabCoordinator.navigateFromChild(to: coordinator, presentationStyle: presentationStyle, animated: animated)
+        }
+    }
+}
+
 // ---------------------------------------------------------
 // MARK: RCEquatable
 // ---------------------------------------------------------

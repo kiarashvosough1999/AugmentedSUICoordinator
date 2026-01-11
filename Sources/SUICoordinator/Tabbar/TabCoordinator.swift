@@ -110,7 +110,7 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     /// The parent coordinator associated with the coordinator.
     ///
     /// This represents the coordinator that presented or contains this tab coordinator.
-    public var parent: (any CoordinatorType)?
+    public var parent: (any CoordinatorType)!
     
     /// The array of children coordinators associated with the coordinator.
     ///
@@ -137,7 +137,7 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     ///
     /// Use this subject to asynchronously update badge values for individual tabs.
     /// Send a tuple containing the badge value (or nil to remove) and the target page.
-    public let badge: PassthroughSubject<(String?, Page), Never>
+    public var setBadge: PassthroughSubject<(String?, Page), Never> = .init()
     
     /// A closure that provides the custom view container for the tab interface.
     ///
@@ -174,15 +174,14 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
         presentationStyle: TransitionPresentationStyle = .sheet,
         viewContainer: @escaping (TabCoordinator<Page>) -> Page.View
     ) {
-        defer { Task { [weak self] in await self?.start() } }
-        
         self.router = .init()
         self.uuid = "\(NSStringFromClass(type(of: self))) - \(UUID().uuidString)"
         self.presentationStyle = presentationStyle
         self.currentPage = currentPage
         self.viewContainer = viewContainer
         self.pages = pages
-        self.badge = .init()
+        
+        router.isTabCoordinable = true
     }
     
     // ---------------------------------------------------------
@@ -199,17 +198,25 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     ///   - animated: A boolean value indicating whether to animate the presentation.
     ///              Defaults to `true`.
     open func start() async {
-        guard !isRunning else { return }
-        
         await setupPages(pages, currentPage: currentPage)
         let cView = viewContainer
         
+        // Present the tab coordinator view first
         await startFlow(
             route: .init(
                 presentationStyle: presentationStyle,
                 content: { cView(self) }
             )
         )
+        
+        // Wait for the tab view to be fully presented before allowing child presentations
+        // This prevents "presentation in progress" errors when child coordinators try to present sheets
+        try? await Task.sleep(for: .milliseconds(200))
+        
+        // Now start the current page's coordinator
+        if let coordinator = getCoordinator(with: currentPage.position) {
+            await coordinator.start()
+        }
     }
     
     // ---------------------------------------------------------
@@ -225,8 +232,8 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     ///   - position: The zero-based position of the coordinator to retrieve.
     /// - Returns: The coordinator at the specified position, or `nil` if no coordinator
     ///           is found at that position.
-    public func getCoordinator(with page: Page) -> AnyCoordinatorType? {
-        children.first { $0.tagId == page.id }
+    public func getCoordinator(with position: Int) -> AnyCoordinatorType? {
+        children.first { $0.tagId == "\(position)" }
     }
     
     /// Retrieves the currently selected coordinator within the tab coordinator.
@@ -239,13 +246,9 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     ///          cannot be found. This can happen if the current page's position doesn't
     ///          match any child coordinator's `tagId`.
     open func getCoordinatorSelected() throws -> (any CoordinatorType) {
-        guard let index = children.firstIndex(where: { $0.tagId == "\(currentPage.id)" })
+        guard let index = children.firstIndex(where: { $0.tagId == "\(currentPage.position)" })
         else { throw TabCoordinatorError.coordinatorSelected }
         return children[index]
-    }
-    
-    public func setBadge(for page: Page, with value: String?) {
-        badge.send((value, page))
     }
     
     /// Performs cleanup operations for the tab coordinator.
@@ -261,5 +264,63 @@ open class TabCoordinator<Page: TabPage>: TabCoordinatable {
     @MainActor public func clean() async {
         await setPages([], currentPage: nil)
         await router.clean(animated: false)
+    }
+    
+    /// Presents a route through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to present views through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - route: The route to present
+    ///   - presentationStyle: The presentation style for the route
+    ///   - animated: Whether to animate the presentation
+    @MainActor public func presentFromChild<Route: RouteType>(_ route: Route, presentationStyle: TransitionPresentationStyle? = .sheet, animated: Bool = true) async {
+        // Convert the generic route to DefaultRoute
+        let defaultRoute = DefaultRoute(
+            presentationStyle: presentationStyle ?? route.presentationStyle,
+            content: { route.body.asAnyView() }
+        )
+        await router.safePresent(defaultRoute, presentationStyle: presentationStyle, animated: animated)
+    }
+    
+    /// Presents a sheet through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to present sheets through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - item: The sheet item to present
+    @MainActor public func presentSheetFromChild(_ item: SheetItem<AnyViewAlias>) async {
+        await router.safePresentSheet(item: item)
+    }
+    
+    /// Dismisses the current presentation through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to dismiss presentations through the tab coordinator's
+    /// router instead of their own, ensuring proper dismissal of parent-presented content.
+    ///
+    /// - Parameters:
+    ///   - animated: Whether to animate the dismissal
+    @MainActor public func dismissFromChild(animated: Bool = true) async {
+        await router.dismiss(animated: animated)
+    }
+    
+    /// Navigates to a coordinator through the tab coordinator's router.
+    ///
+    /// This method allows child coordinators to navigate to other coordinators through the tab coordinator's
+    /// router instead of their own, preventing "presentation in progress" errors.
+    ///
+    /// - Parameters:
+    ///   - coordinator: The coordinator to navigate to
+    ///   - presentationStyle: The presentation style for the navigation
+    ///   - animated: Whether to animate the navigation
+    @MainActor public func navigateFromChild(to coordinator: AnyCoordinatorType, presentationStyle: TransitionPresentationStyle, animated: Bool = true) async {
+        startChildCoordinator(coordinator)
+        
+        let item = buildSheetItemForCoordinator(coordinator, presentationStyle: presentationStyle, animated: animated)
+        
+        // Present immediately without any delays or complex cleanup
+        await router.safePresentSheet(item: item)
     }
 }
